@@ -1,9 +1,11 @@
 package com.example.api;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -29,6 +31,8 @@ public class TaskController implements HttpHandler {
         // GET リクエストの処理
         if ("GET".equalsIgnoreCase(method)) {
             handleGetTasks(exchange);
+        } else if ("POST".equals(method)) {
+            handlePostTask(exchange);
         } else {
             // GET 以外のリクエストは 405 Method Not Allowed を返す
             sendResponse(exchange, 405, "Method Not Allowed");
@@ -53,6 +57,23 @@ public class TaskController implements HttpHandler {
         }
     }
 
+    private void handlePostTask(HttpExchange exchange) throws IOException {
+        try (InputStream requestBody = exchange.getRequestBody()) {
+            // リクエストボディから JSON を読み込み、Task オブジェクトに変換
+            Task newTask = objectMapper.readValue(requestBody, Task.class);
+
+            // データベースに新しいタスクを保存
+            saveTaskToDatabase(newTask);
+
+            // 201 Created ステータスと成功メッセージを返す
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            sendResponse(exchange, 201, "{\"message\": \"Task added successfully\"}");
+        } catch (SQLException e) {
+            e.printStackTrace();
+            sendResponse(exchange, 500, "{\"error\": \"Database error\"}");
+        }
+    }
+
     private List<Task> fetchAllTasksFromDatabase() throws SQLException {
         List<Task> tasks = new ArrayList<>();
         // DB に接続
@@ -62,20 +83,30 @@ public class TaskController implements HttpHandler {
 
             // 結果セットをループし、Task オブジェクトに変換
             while (rs.next()) {
-                Task task = new Task(
-                        rs.getInt("id"),
-                        rs.getString("title"),
-                        rs.getBoolean("completed"));
-                tasks.add(task);
+                tasks.add(new Task(
+                    rs.getInt("id"),
+                    rs.getString("title"),
+                    rs.getBoolean("completed")
+                ));
             }
         }
         return tasks;
     }
 
+    private void saveTaskToDatabase(Task task) throws SQLException {
+        String sql = "INSERT INTO tasks (title) VALUES (?)";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, task.getTitle());
+            pstmt.executeUpdate();
+        }
+    }
+
     private void sendResponse(HttpExchange exchange, int statusCode, String responseBody) throws IOException {
-        exchange.sendResponseHeaders(statusCode, responseBody.length());
+        byte[] responseBytes = responseBody.getBytes("UTF-8");
+        exchange.sendResponseHeaders(statusCode, responseBytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
-            os.write(responseBody.getBytes());
+            os.write(responseBytes);
         }
     }
 }
