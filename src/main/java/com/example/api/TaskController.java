@@ -33,6 +33,8 @@ public class TaskController implements HttpHandler {
             handleGetTasks(exchange);
         } else if ("POST".equals(method)) {
             handlePostTask(exchange);
+        } else if ("PUT".equalsIgnoreCase(method)) {
+            handlePutTask(exchange);
         } else {
             // GET 以外のリクエストは 405 Method Not Allowed を返す
             sendResponse(exchange, 405, "Method Not Allowed");
@@ -74,6 +76,36 @@ public class TaskController implements HttpHandler {
         }
     }
 
+    private void handlePutTask(HttpExchange exchange) throws IOException {
+        try (InputStream requestBody = exchange.getRequestBody()) {
+            String path = exchange.getRequestURI().getPath();
+            int taskId = Integer.parseInt(path.substring(path.lastIndexOf('/') + 1));
+
+            Task updatedTask = objectMapper.readValue(requestBody, Task.class);
+
+            updateTaskInDatabase(taskId, updatedTask);
+
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            sendResponse(exchange, 200, "{\"message\": \"Task updated successfully\"}");
+        } catch (SQLException e) {
+            e.printStackTrace();
+            sendResponse(exchange, 500, "{\"error\": \"Database error\"}");
+        } catch (NumberFormatException e) {
+            sendResponse(exchange, 400, "{\"error\": \"Invalid task ID\"}");
+        }
+    }
+
+    private void updateTaskInDatabase(int id, Task task) throws SQLException {
+        String sql = "UPDATE tasks SET title = ?, completed = ? WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, task.getTitle());
+            pstmt.setBoolean(2, task.isCompleted());
+            pstmt.setInt(3, id);
+            pstmt.executeUpdate();
+        }
+    }
+
     private List<Task> fetchAllTasksFromDatabase() throws SQLException {
         List<Task> tasks = new ArrayList<>();
         // DB に接続
@@ -84,10 +116,9 @@ public class TaskController implements HttpHandler {
             // 結果セットをループし、Task オブジェクトに変換
             while (rs.next()) {
                 tasks.add(new Task(
-                    rs.getInt("id"),
-                    rs.getString("title"),
-                    rs.getBoolean("completed")
-                ));
+                        rs.getInt("id"),
+                        rs.getString("title"),
+                        rs.getBoolean("completed")));
             }
         }
         return tasks;
