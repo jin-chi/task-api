@@ -35,6 +35,8 @@ public class TaskController implements HttpHandler {
             handlePostTask(exchange);
         } else if ("PUT".equalsIgnoreCase(method)) {
             handlePutTask(exchange);
+        } else if ("DELETE".equalsIgnoreCase(method)) {
+            handleDeleteTask(exchange);
         } else {
             // GET 以外のリクエストは 405 Method Not Allowed を返す
             sendResponse(exchange, 405, "Method Not Allowed");
@@ -92,6 +94,31 @@ public class TaskController implements HttpHandler {
             sendResponse(exchange, 500, "{\"error\": \"Database error\"}");
         } catch (NumberFormatException e) {
             sendResponse(exchange, 400, "{\"error\": \"Invalid task ID\"}");
+        }
+    }
+
+    private void handleDeleteTask(HttpExchange exchange) throws IOException {
+        try {
+            String path = exchange.getRequestURI().getPath();
+            int taskId = Integer.parseInt(path.substring(path.lastIndexOf('/') + 1));
+
+            deleteTaskFromDatabase(taskId);
+
+            sendResponse(exchange, 200, "{\"message\": \"Task deleted successfully\"}");
+        } catch (SQLException e) {
+            e.printStackTrace();
+            sendResponse(exchange, 500, "{\"error\": \"Database error\"}");
+        } catch (NumberFormatException e) {
+            sendResponse(exchange, 400, "{\"error\": \"Invalid task ID\"}");
+        }
+    }
+
+    private void deleteTaskFromDatabase(int id) throws SQLException {
+        String sql = "DELETE FROM tasks WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            pstmt.executeUpdate();
         }
     }
 
